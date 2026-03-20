@@ -63,7 +63,7 @@ func (a *Agent) Run(ctx context.Context, userInput string) error {
 		}
 
 		// LLMの回答を履歴に追加
-		a.messages = append(a.messages, anthropic.NewAssistantMessage(resp.ToParam().Content...))
+		a.messages = append(a.messages, resp.ToParam())
 
 		switch resp.StopReason {
 		case anthropic.StopReasonEndTurn:
