@@ -14,15 +14,60 @@ import (
 	"github.com/khirotaka/tiny-code/agent"
 )
 
-func main() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error loading .env file: %v\n", err)
-		os.Exit(1)
+// AGENTS.md を読み込む
+// 1. $XDG_CONFIG_HOME/tiny-code/AGENTS.md
+// 2. カレントディレクトリの AGENTS.md
+// 3. カレントディレクトリの AGENTS.local.md
+func loadAgentsFile() string {
+	var promptBuilder strings.Builder
+
+	// 1. Global $XDG_CONFIG_HOME/tiny-code/AGENTS.md
+	configDir, ok := os.LookupEnv("XDG_CONFIG_HOME")
+	if !ok || configDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			configDir = filepath.Join(homeDir, ".config")
+		}
+	}
+	if configDir != "" {
+		configPath := filepath.Join(configDir, "tiny-code", "AGENTS.md")
+		if _, err := os.Stat(configPath); err == nil {
+			data, err := os.ReadFile(configPath)
+			if err == nil && len(data) > 0 {
+				promptBuilder.WriteString("<global_agent_rule>\n")
+				promptBuilder.Write(data)
+				promptBuilder.WriteString("\n</global_agent_rule>\n")
+			}
+		}
+	}
+	// 2. プロジェクトスコープの AGENTS.md
+	projectPath := "AGENTS.md"
+	if _, err := os.Stat(projectPath); err == nil {
+		data, err := os.ReadFile(projectPath)
+		if err == nil && len(data) > 0 {
+			promptBuilder.WriteString("<project_agent_rule>\n")
+			promptBuilder.Write(data)
+			promptBuilder.WriteString("\n</project_agent_rule>\n")
+		}
+	}
+	// 3. プロジェクトスコープの AGENTS.local.md
+	localPath := "AGENTS.local.md"
+	if _, err := os.Stat(localPath); err == nil {
+		data, err := os.ReadFile(localPath)
+		if err == nil && len(data) > 0 {
+			promptBuilder.WriteString("<local_agent_rule>\n")
+			promptBuilder.Write(data)
+			promptBuilder.WriteString("\n</local_agent_rule>\n")
+		}
 	}
 
-	// カレントディレクトリの skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
+	return promptBuilder.String()
+}
+
+// カレントディレクトリの skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
+func loadSkills() ([]agent.Meta, error) {
 	var skills []agent.Meta
-	if err := filepath.Walk("skills", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk("skills", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -45,12 +90,24 @@ func main() {
 
 		skills = append(skills, skill)
 		return nil
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+	})
+
+	return skills, err
+}
+
+func main() {
+	if err := godotenv.Load(); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error loading .env file: %v\n", err)
 		os.Exit(1)
 	}
 
-	a := agent.New(skills)
+	rules := loadAgentsFile()
+	skills, err := loadSkills()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+		os.Exit(1)
+	}
+	a := agent.New(rules, skills)
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Println("🤖 tiny-code agent (type 'exit' to quit)")

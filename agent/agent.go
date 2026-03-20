@@ -26,27 +26,34 @@ type Agent struct {
 	messages     []anthropic.MessageParam
 }
 
-func buildSystemPrompt(skills []Meta) string {
-	if len(skills) == 0 {
-		return systemPrompt
-	}
+func buildSystemPrompt(rules string, skills []Meta) string {
 	var sb strings.Builder
 	sb.WriteString(systemPrompt)
-	sb.WriteString("\n\n## 利用可能なスキル\n")
-	sb.WriteString("ユーザーのリクエストに応じて、以下のスキルを `/skill-name` 形式で提案できます。\n")
-	for _, s := range skills {
-		fmt.Fprintf(&sb, "- /%s: %s\n", s.Name, s.Description)
+
+	if len(skills) > 0 {
+		sb.WriteString("\n<available_skills>\n")
+		sb.WriteString("ユーザーのリクエストに応じて、以下のスキルを `/skill-name` 形式で提案できます。\n")
+		for _, s := range skills {
+			fmt.Fprintf(&sb, "- /%s: %s\n", s.Name, s.Description)
+		}
+		sb.WriteString("\n</available_skills>\n")
+	}
+
+	if rules != "" {
+		sb.WriteString("\n<rules>\n")
+		sb.WriteString(rules)
+		sb.WriteString("\n</rules>\n")
 	}
 
 	return sb.String()
 }
 
-func New(skills []Meta) *Agent {
+func New(rules string, skills []Meta) *Agent {
 	// 自動的に 環境変数 ANTHROPIC_API_KEY が参照される
 	client := anthropic.NewClient()
 	return &Agent{
 		client:       &client,
-		systemPrompt: buildSystemPrompt(skills),
+		systemPrompt: buildSystemPrompt(rules, skills),
 	}
 }
 
