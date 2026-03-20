@@ -64,10 +64,10 @@ func loadAgentsFile() string {
 	return promptBuilder.String()
 }
 
-// カレントディレクトリの skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
+// カレントディレクトリの .tiny-code/skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
 func loadSkills() ([]agent.Meta, error) {
 	var skills []agent.Meta
-	err := filepath.Walk("skills", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(agent.SkillPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func main() {
 		if after, ok := strings.CutPrefix(input, "/"); ok {
 			skillName, args, _ := strings.Cut(after, " ")
 			// skills/{skillName}/SKILL.md を読み込んでエージェントに渡す
-			skillData, err := os.ReadFile(filepath.Join("skills", skillName, "SKILL.md"))
+			skillData, err := os.ReadFile(filepath.Join(agent.SkillPath, skillName, "SKILL.md"))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 				continue

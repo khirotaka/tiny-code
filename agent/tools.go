@@ -243,7 +243,7 @@ func loadSkill(input map[string]any) toolResult {
 			true,
 		}
 	}
-	data, err := os.ReadFile(filepath.Join("skills", name, "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(SkillPath, name, "SKILL.md"))
 	if err != nil {
 		return toolResult{
 			err.Error(),
