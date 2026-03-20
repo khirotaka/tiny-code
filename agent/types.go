@@ -2,7 +2,7 @@ package agent
 
 const SkillPath = ".tiny-code/skills"
 
-type Meta struct {
+type SkillMeta struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 }

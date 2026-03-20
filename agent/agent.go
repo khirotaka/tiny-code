@@ -26,7 +26,7 @@ type Agent struct {
 	messages     []anthropic.MessageParam
 }
 
-func buildSystemPrompt(rules string, skills []Meta) string {
+func buildSystemPrompt(rules string, skills []SkillMeta) string {
 	var sb strings.Builder
 	sb.WriteString(systemPrompt)
 
@@ -48,7 +48,7 @@ func buildSystemPrompt(rules string, skills []Meta) string {
 	return sb.String()
 }
 
-func New(rules string, skills []Meta) *Agent {
+func New(rules string, skills []SkillMeta) *Agent {
 	// 自動的に 環境変数 ANTHROPIC_API_KEY が参照される
 	client := anthropic.NewClient()
 	return &Agent{

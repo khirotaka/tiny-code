@@ -250,7 +250,7 @@ func loadSkill(input map[string]any) toolResult {
 			true,
 		}
 	}
-	var m Meta
+	var m SkillMeta
 	body, err := frontmatter.Parse(bytes.NewReader(data), &m)
 	if err != nil {
 		return toolResult{

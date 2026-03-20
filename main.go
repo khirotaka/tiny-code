@@ -65,8 +65,8 @@ func loadAgentsFile() string {
 }
 
 // カレントディレクトリの .tiny-code/skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
-func loadSkills() ([]agent.Meta, error) {
-	var skills []agent.Meta
+func loadSkills() ([]agent.SkillMeta, error) {
+	var skills []agent.SkillMeta
 	err := filepath.Walk(agent.SkillPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -82,7 +82,7 @@ func loadSkills() ([]agent.Meta, error) {
 			return err
 		}
 
-		var skill agent.Meta
+		var skill agent.SkillMeta
 		_, err = frontmatter.Parse(bytes.NewReader(data), &skill)
 		if err != nil {
 			return err
@@ -140,7 +140,7 @@ func main() {
 				continue
 			}
 
-			var m agent.Meta
+			var m agent.SkillMeta
 			body, err := frontmatter.Parse(bytes.NewReader(skillData), &m)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
