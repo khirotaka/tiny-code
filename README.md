@@ -101,6 +101,23 @@ AnthropicのClaude APIを利用しています。
 - **`load_skill`**: `skills/` ディレクトリに保存されているスキルのうち、指定されたもののbodyを読み込みます。
   - **引数**: `name` (例: `data-analysis`)
 
+## AGENTS.md
+[AGENTS.md](https://agents.md) を使い、システムプロンプトをカスタマイズすることができます。
+
+`tiny-code` では、
+
+1. `$XDG_CONFIG_HOME/tiny-code/AGENTS.md`
+2. カレントディレクトリの `AGENTS.md`
+3. カレントディレクトリの `AGENTS.local.md`
+
+の順に `AGENTS.md` を結合し、システムプロンプトとして使用します。
+
+LLMには「プロンプトの末尾（後方）にある情報ほど強く影響を受ける（Recency Bias）」という特性があります。
+したがって、最も優先したい「現在進行系のローカルなルール」が最後に来るように順番に結合していく方法を採用しています。
+
+また、各 `AGENTS.md` は XMLタグを用いて構造化しています。これは、[Anthropic ベストプラクティス](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#structure-prompts-with-xml-tags) で推奨されているためです。
+詳細は、 [main.go](./main.go) を参照してください。
+
 
 ## クリーンアップ
 
