@@ -16,6 +16,7 @@ const (
 	systemPrompt = `あなたはコーディングエージェントです。ファイルの読み込み、書き込み、そして bashコマンドの実行ができます。
 コードを修正する前に、必ずツールを使用して既存のコードを検査してください。
 最終的な回答は簡潔にしてください。`
+	contextThreshold = 8_000
 )
 
 type Agent struct {
@@ -60,6 +61,13 @@ func (a *Agent) Run(ctx context.Context, userInput string) error {
 		})
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
+		}
+
+		// トークン使用量チェック
+		if resp.Usage.InputTokens > contextThreshold {
+			if err := a.compact(ctx); err != nil {
+				return fmt.Errorf("failed to compact message history: %w", err)
+			}
 		}
 
 		// LLMの回答を履歴に追加
@@ -117,6 +125,31 @@ func (a *Agent) Run(ctx context.Context, userInput string) error {
 	}
 
 	return fmt.Errorf("reached max turns (%d)", maxTurns)
+}
+
+func (a *Agent) compact(ctx context.Context) error {
+	compactResp, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     model,
+		MaxTokens: maxTokens,
+		System: []anthropic.TextBlockParam{
+			{
+				Text: "以下の会話履歴を、エージェントが作業を継続するために必要な情報を保持した形で簡潔に要約してください。",
+			},
+		},
+		Messages: a.messages,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to compact message history: %w", err)
+	}
+
+	summary := compactResp.Content[0].Text
+	a.messages = []anthropic.MessageParam{
+		anthropic.NewUserMessage(
+			anthropic.NewTextBlock("[会話履歴の要約]\n" + summary),
+		),
+	}
+
+	return nil
 }
 
 // ツール引数を見やすく整形する
