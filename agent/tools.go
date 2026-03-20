@@ -14,12 +14,27 @@ import (
 
 var sandboxDir string
 
+type toolType string
+
 const (
-	toolReadFile  string = "read_file"
-	toolWriteFile string = "write_file"
-	toolExecBash  string = "exec_bash"
-	toolLoadSkill string = "load_skill"
+	toolReadFile  toolType = "read_file"
+	toolWriteFile toolType = "write_file"
+	toolExecBash  toolType = "exec_bash"
+	toolLoadSkill toolType = "load_skill"
 )
+
+func (t toolType) String() string {
+	return string(t)
+}
+
+func parseTool(name string) (toolType, error) {
+	switch toolType(name) {
+	case toolReadFile, toolWriteFile, toolExecBash, toolLoadSkill:
+		return toolType(name), nil
+	default:
+		return "", fmt.Errorf("unknown tool: %s", name)
+	}
+}
 
 func init() {
 	abs, err := filepath.Abs("./sandbox")
@@ -29,64 +44,74 @@ func init() {
 	sandboxDir = abs
 }
 
-func getToolDefinitions() []anthropic.ToolUnionParam {
-	var toolParamsDefinitions = []anthropic.ToolParam{
-		{
-			Name:        toolReadFile,
-			Description: anthropic.String("Read the contents of a file. Path is relative to the sandbox directory"),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "File path relative to sandbox (e.g. main.go)",
+func getToolDefinitions(allowTools []toolType) []anthropic.ToolUnionParam {
+	var toolParamsDefinitions = []anthropic.ToolParam{}
+
+	for _, tool := range allowTools {
+		switch tool {
+		case toolReadFile:
+			toolParamsDefinitions = append(toolParamsDefinitions, anthropic.ToolParam{
+				Name:        toolReadFile.String(),
+				Description: anthropic.String("Read the contents of a file. Path is relative to the sandbox directory"),
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Properties: map[string]any{
+						"path": map[string]any{
+							"type":        "string",
+							"description": "File path relative to sandbox (e.g. main.go)",
+						},
 					},
+					Required: []string{"path"},
 				},
-				Required: []string{"path"},
-			},
-		},
-		{
-			Name:        toolWriteFile,
-			Description: anthropic.String("Write content to a file. Create directories as needed. Path is relative to the sandbox directory."),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: map[string]any{
-					"path": map[string]any{
-						"type":        "string",
-						"description": "File path relative to sandbox (e.g. main.go)",
+			})
+		case toolWriteFile:
+			toolParamsDefinitions = append(toolParamsDefinitions, anthropic.ToolParam{
+				Name:        toolWriteFile.String(),
+				Description: anthropic.String("Write content to a file. Create directories as needed. Path is relative to the sandbox directory."),
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Properties: map[string]any{
+						"path": map[string]any{
+							"type":        "string",
+							"description": "File path relative to sandbox (e.g. main.go)",
+						},
+						"content": map[string]any{
+							"type":        "string",
+							"description": "Content to write to the file",
+						},
 					},
-					"content": map[string]any{
-						"type":        "string",
-						"description": "Content to write to the file",
-					},
+					Required: []string{"path", "content"},
 				},
-				Required: []string{"path", "content"},
-			},
-		},
-		{
-			Name:        toolExecBash,
-			Description: anthropic.String("Execute a bash command inside the sandbox directory"),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: map[string]any{
-					"command": map[string]any{
-						"type":        "string",
-						"description": "Bash command to execute",
+			})
+		case toolExecBash:
+			toolParamsDefinitions = append(toolParamsDefinitions, anthropic.ToolParam{
+				Name:        toolExecBash.String(),
+				Description: anthropic.String("Execute a bash command inside the sandbox directory"),
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Properties: map[string]any{
+						"command": map[string]any{
+							"type":        "string",
+							"description": "Bash command to execute",
+						},
 					},
+					Required: []string{"command"},
 				},
-				Required: []string{"command"},
-			},
-		},
-		{
-			Name:        toolLoadSkill,
-			Description: anthropic.String("Specify the skill name to load the detailed instructions for that skill. The system prompt displays a list of available skills, so actively access any relevant skills."),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: map[string]any{
-					"name": map[string]any{
-						"type":        "string",
-						"description": "Skill name",
+			})
+
+		case toolLoadSkill:
+			toolParamsDefinitions = append(toolParamsDefinitions, anthropic.ToolParam{
+				Name:        toolLoadSkill.String(),
+				Description: anthropic.String("Specify the skill name to load the detailed instructions for that skill. The system prompt displays a list of available skills, so actively access any relevant skills."),
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Properties: map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Skill name",
+						},
 					},
+					Required: []string{"name"},
 				},
-				Required: []string{"name"},
-			},
-		},
+			})
+		}
+
 	}
 
 	var tools = make([]anthropic.ToolUnionParam, len(toolParamsDefinitions))
@@ -104,7 +129,7 @@ type toolResult struct {
 	isError bool
 }
 
-func executeTool(name string, input map[string]any) toolResult {
+func executeTool(name toolType, input map[string]any) toolResult {
 	switch name {
 	case toolReadFile:
 		return readFile(input)

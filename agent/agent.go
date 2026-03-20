@@ -90,7 +90,12 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 			MaxTokens: maxTokens,
 			System:    systemParams,
 			Messages:  a.messages,
-			Tools:     getToolDefinitions(),
+			Tools: getToolDefinitions([]toolType{
+				toolReadFile,
+				toolWriteFile,
+				toolExecBash,
+				toolLoadSkill,
+			}),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
@@ -131,7 +136,11 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 					fmt.Printf("🔧 %s(%v)\n", block.Name, formatInput(input))
 
 					// ツール実行
-					result := executeTool(block.Name, input)
+					tool, err := parseTool(block.Name)
+					if err != nil {
+						return err
+					}
+					result := executeTool(tool, input)
 					if result.isError {
 						fmt.Printf("  ❌ %s\n", result.content)
 					} else {
