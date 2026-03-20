@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/adrg/frontmatter"
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
@@ -16,6 +18,7 @@ const (
 	toolReadFile  string = "read_file"
 	toolWriteFile string = "write_file"
 	toolExecBash  string = "exec_bash"
+	toolLoadSkill string = "load_skill"
 )
 
 func init() {
@@ -71,6 +74,19 @@ func getToolDefinitions() []anthropic.ToolUnionParam {
 				Required: []string{"command"},
 			},
 		},
+		{
+			Name:        toolLoadSkill,
+			Description: anthropic.String("Specify the skill name to load the detailed instructions for that skill. The system prompt displays a list of available skills, so actively access any relevant skills."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Skill name",
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
 	}
 
 	var tools = make([]anthropic.ToolUnionParam, len(toolParamsDefinitions))
@@ -96,6 +112,8 @@ func executeTool(name string, input map[string]any) toolResult {
 		return writeFile(input)
 	case toolExecBash:
 		return execBash(input)
+	case toolLoadSkill:
+		return loadSkill(input)
 	default:
 		return toolResult{
 			fmt.Sprintf("unknown tool: %s", name),
@@ -206,6 +224,42 @@ func execBash(input map[string]any) toolResult {
 	}
 	return toolResult{
 		result,
+		false,
+	}
+}
+
+func loadSkill(input map[string]any) toolResult {
+	name, ok := input["name"].(string)
+	if !ok {
+		return toolResult{
+			"name is required",
+			true,
+		}
+	}
+
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return toolResult{
+			"invalid skill name",
+			true,
+		}
+	}
+	data, err := os.ReadFile(filepath.Join("skills", name, "SKILL.md"))
+	if err != nil {
+		return toolResult{
+			err.Error(),
+			true,
+		}
+	}
+	var m Meta
+	body, err := frontmatter.Parse(bytes.NewReader(data), &m)
+	if err != nil {
+		return toolResult{
+			err.Error(),
+			true,
+		}
+	}
+	return toolResult{
+		string(body),
 		false,
 	}
 }
