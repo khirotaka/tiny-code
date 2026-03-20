@@ -11,7 +11,8 @@
 				"google.gemini-cli-vscode-ide-companion",
 				"google.geminicodeassist",
 				"mhutchie.git-graph",
-				"adam-bender.commit-message-editor"
+				"adam-bender.commit-message-editor",
+				"ms-vscode.makefile-tools"
 			]
 		}
 	}
