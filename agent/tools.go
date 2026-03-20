@@ -14,18 +14,12 @@ import (
 
 var sandboxDir string
 
-type toolType string
-
 const (
 	toolReadFile  toolType = "read_file"
 	toolWriteFile toolType = "write_file"
 	toolExecBash  toolType = "exec_bash"
 	toolLoadSkill toolType = "load_skill"
 )
-
-func (t toolType) String() string {
-	return string(t)
-}
 
 func parseTool(name string) (toolType, error) {
 	switch toolType(name) {
@@ -122,11 +116,6 @@ func getToolDefinitions(allowTools []toolType) []anthropic.ToolUnionParam {
 	}
 
 	return tools
-}
-
-type toolResult struct {
-	content string
-	isError bool
 }
 
 func executeTool(name toolType, input map[string]any) toolResult {
