@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 )
@@ -20,15 +21,32 @@ const (
 )
 
 type Agent struct {
-	client   *anthropic.Client
-	messages []anthropic.MessageParam
+	client       *anthropic.Client
+	systemPrompt string
+	messages     []anthropic.MessageParam
 }
 
-func New() *Agent {
+func buildSystemPrompt(skills []Meta) string {
+	if len(skills) == 0 {
+		return systemPrompt
+	}
+	var sb strings.Builder
+	sb.WriteString(systemPrompt)
+	sb.WriteString("\n\n## 利用可能なスキル\n")
+	sb.WriteString("ユーザーのリクエストに応じて、以下のスキルを `/skill-name` 形式で提案できます。\n")
+	for _, s := range skills {
+		fmt.Fprintf(&sb, "- /%s: %s\n", s.Name, s.Description)
+	}
+
+	return sb.String()
+}
+
+func New(skills []Meta) *Agent {
 	// 自動的に 環境変数 ANTHROPIC_API_KEY が参照される
 	client := anthropic.NewClient()
 	return &Agent{
-		client: &client,
+		client:       &client,
+		systemPrompt: buildSystemPrompt(skills),
 	}
 }
 
@@ -49,9 +67,10 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 
 	systemParams := []anthropic.TextBlockParam{
 		{
-			Text: systemPrompt,
+			Text: a.systemPrompt,
 		},
 	}
+
 	if skillData != "" {
 		systemParams = append(systemParams, anthropic.TextBlockParam{
 			Text: skillData,
