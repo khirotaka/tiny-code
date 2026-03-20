@@ -33,7 +33,7 @@ func New() *Agent {
 }
 
 // ユーザーのリクエストを受け取りエージェントループを実行する
-func (a *Agent) Run(ctx context.Context, userInput string) error {
+func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 
 	// sandboxディレクトリを確保
 	if err := os.MkdirAll(sandboxDir, 0755); err != nil {
@@ -47,22 +47,31 @@ func (a *Agent) Run(ctx context.Context, userInput string) error {
 
 	fmt.Println()
 
+	systemParams := []anthropic.TextBlockParam{
+		{
+			Text: systemPrompt,
+		},
+	}
+	if skillData != "" {
+		systemParams = append(systemParams, anthropic.TextBlockParam{
+			Text: skillData,
+		})
+	}
+
 	for range maxTurns {
 		resp, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     model,
 			MaxTokens: maxTokens,
-			System: []anthropic.TextBlockParam{
-				{
-					Text: systemPrompt,
-				},
-			},
-			Messages: a.messages,
-			Tools:    getToolDefinitions(),
+			System:    systemParams,
+			Messages:  a.messages,
+			Tools:     getToolDefinitions(),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
 		}
 
+		// LLMの回答を履歴に追加
+		a.messages = append(a.messages, resp.ToParam())
 		// トークン使用量チェック
 		if resp.Usage.InputTokens > contextThreshold {
 			if err := a.compact(ctx); err != nil {
@@ -70,14 +79,13 @@ func (a *Agent) Run(ctx context.Context, userInput string) error {
 			}
 		}
 
-		// LLMの回答を履歴に追加
-		a.messages = append(a.messages, resp.ToParam())
-
 		switch resp.StopReason {
 		case anthropic.StopReasonEndTurn:
 			// テキスト応答を出力して終了
 			for _, block := range resp.Content {
-				fmt.Println(block.Text)
+				if block.Type == "text" {
+					fmt.Println(block.Text)
+				}
 			}
 			return nil
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -35,7 +36,31 @@ func main() {
 			fmt.Println("Bye!")
 			break
 		}
-		if err := a.Run(context.Background(), input); err != nil {
+
+		var (
+			skill       string
+			userMessage string
+		)
+
+		if after, ok := strings.CutPrefix(input, "/"); ok {
+			skillName, args, _ := strings.Cut(after, " ")
+			// skills/{skillName}/SKILL.md を読み込んでエージェントに渡す
+			skillData, err := os.ReadFile(filepath.Join("skills", skillName, "SKILL.md"))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+				continue
+			}
+
+			skill = string(skillData)
+			userMessage = args
+			if userMessage == "" {
+				userMessage = "スキルの手順に従って実行してください。"
+			}
+		} else {
+			userMessage = input
+		}
+
+		if err := a.Run(context.Background(), userMessage, skill); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		}
 	}
