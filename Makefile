@@ -10,7 +10,7 @@ all: build
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p bin
-	go build -o $(BINARY_PATH) .
+	CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o $(BINARY_PATH) .
 	@echo "Build complete: $(BINARY_PATH)"
 
 # remove the binary
