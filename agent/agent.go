@@ -11,24 +11,27 @@ import (
 )
 
 const (
-	maxTurns     = 20
-	maxTokens    = 4096
-	model        = anthropic.ModelClaudeHaiku4_5
-	systemPrompt = `あなたはコーディングエージェントです。ファイルの読み込み、書き込み、そして bashコマンドの実行ができます。
+	maxTurns         = 20
+	maxTokens        = 4096
+	model            = anthropic.ModelClaudeHaiku4_5
+	baseSystemPrompt = `あなたはコーディングエージェントです。ファイルの読み込み、書き込み、そして bashコマンドの実行ができます。
 コードを修正する前に、必ずツールを使用して既存のコードを検査してください。
 最終的な回答は簡潔にしてください。`
 	contextThreshold = 8_000
 )
 
 type Agent struct {
-	client       *anthropic.Client
+	client       *Client
 	systemPrompt string
 	messages     []anthropic.MessageParam
+	eventCh      chan<- StreamEvent
+	tools        []toolType
+	isRoot       bool
 }
 
-func buildSystemPrompt(rules string, skills []SkillMeta) string {
+func buildSystemPrompt(rules string, skills []SkillMeta, agents []AgentMeta) string {
 	var sb strings.Builder
-	sb.WriteString(systemPrompt)
+	sb.WriteString(baseSystemPrompt)
 
 	if len(skills) > 0 {
 		sb.WriteString("\n<available_skills>\n")
@@ -37,6 +40,15 @@ func buildSystemPrompt(rules string, skills []SkillMeta) string {
 			fmt.Fprintf(&sb, "- /%s: %s\n", s.Name, s.Description)
 		}
 		sb.WriteString("\n</available_skills>\n")
+	}
+
+	if len(agents) > 0 {
+		sb.WriteString("\n<available_agents>\n")
+		sb.WriteString("サブタスクを委譲するために、以下のエージェントを run_agent ツールで呼び出せます。\n")
+		for _, a := range agents {
+			fmt.Fprintf(&sb, "- %s: %s\n", a.Name, a.Description)
+		}
+		sb.WriteString("\n</available_agents>\n")
 	}
 
 	if rules != "" {
@@ -48,12 +60,13 @@ func buildSystemPrompt(rules string, skills []SkillMeta) string {
 	return sb.String()
 }
 
-func New(rules string, skills []SkillMeta) *Agent {
-	// 自動的に 環境変数 ANTHROPIC_API_KEY が参照される
-	client := anthropic.NewClient()
+func New(client *Client, eventCh chan StreamEvent, rules string, skills []SkillMeta, agents []AgentMeta) *Agent {
 	return &Agent{
-		client:       &client,
-		systemPrompt: buildSystemPrompt(rules, skills),
+		client:       client,
+		systemPrompt: buildSystemPrompt(rules, skills, agents),
+		eventCh:      eventCh,
+		tools:        []toolType{toolReadFile, toolWriteFile, toolExecBash, toolLoadSkill, toolRunAgent},
+		isRoot:       true,
 	}
 }
 
@@ -70,8 +83,6 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 		anthropic.NewTextBlock(userInput),
 	))
 
-	fmt.Println()
-
 	systemParams := []anthropic.TextBlockParam{
 		{
 			Text: a.systemPrompt,
@@ -85,17 +96,12 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 	}
 
 	for range maxTurns {
-		resp, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		resp, err := a.client.call(ctx, anthropic.MessageNewParams{
 			Model:     model,
 			MaxTokens: maxTokens,
 			System:    systemParams,
 			Messages:  a.messages,
-			Tools: getToolDefinitions([]toolType{
-				toolReadFile,
-				toolWriteFile,
-				toolExecBash,
-				toolLoadSkill,
-			}),
+			Tools:     getToolDefinitions(a.tools),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
@@ -105,9 +111,7 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 		a.messages = append(a.messages, resp.ToParam())
 		// トークン使用量チェック
 		if resp.Usage.InputTokens > contextThreshold {
-			if err := a.compact(ctx); err != nil {
-				return fmt.Errorf("failed to compact message history: %w", err)
-			}
+			_ = a.compact(ctx)
 		}
 
 		switch resp.StopReason {
@@ -115,8 +119,11 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 			// テキスト応答を出力して終了
 			for _, block := range resp.Content {
 				if block.Type == "text" {
-					fmt.Println(block.Text)
+					a.eventCh <- StreamEvent{Type: EventText, Text: block.Text}
 				}
+			}
+			if a.isRoot {
+				a.eventCh <- StreamEvent{Type: EventDone}
 			}
 			return nil
 
@@ -133,22 +140,18 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 						return fmt.Errorf("failed to unmarshal tool input: %w", err)
 					}
 
-					fmt.Printf("🔧 %s(%v)\n", block.Name, formatInput(input))
+					a.eventCh <- StreamEvent{Type: EventToolUse, Tool: block.Name, Input: input}
 
 					// ツール実行
 					tool, err := parseTool(block.Name)
 					if err != nil {
 						return err
 					}
-					result := executeTool(tool, input)
-					if result.isError {
-						fmt.Printf("  ❌ %s\n", result.content)
-					} else {
-						preview := result.content
-						if len(preview) > 100 {
-							preview = preview[:100] + "..."
-						}
-						fmt.Printf("  ✅ %s\n", preview)
+					result := a.executeTool(ctx, tool, input)
+					a.eventCh <- StreamEvent{
+						Type:    EventToolResult,
+						Content: result.content,
+						IsError: result.isError,
 					}
 
 					toolResults = append(toolResults, anthropic.NewToolResultBlock(
@@ -171,7 +174,7 @@ func (a *Agent) Run(ctx context.Context, userInput, skillData string) error {
 }
 
 func (a *Agent) compact(ctx context.Context) error {
-	compactResp, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+	compactResp, err := a.client.call(ctx, anthropic.MessageNewParams{
 		Model:     model,
 		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{
@@ -185,6 +188,9 @@ func (a *Agent) compact(ctx context.Context) error {
 		return fmt.Errorf("failed to compact message history: %w", err)
 	}
 
+	if len(compactResp.Content) == 0 {
+		return fmt.Errorf("compact response has no content")
+	}
 	summary := compactResp.Content[0].Text
 	a.messages = []anthropic.MessageParam{
 		anthropic.NewUserMessage(
@@ -193,18 +199,4 @@ func (a *Agent) compact(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// ツール引数を見やすく整形する
-func formatInput(input map[string]any) string {
-	if path, ok := input["path"].(string); ok {
-		return fmt.Sprintf("path=%q", path)
-	}
-	if command, ok := input["command"].(string); ok {
-		if len(command) > 60 {
-			command = command[:60] + "..."
-		}
-		return fmt.Sprintf("command=%q", command)
-	}
-	return fmt.Sprintf("%v", input)
 }

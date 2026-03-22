@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ var sandboxDir string
 
 func parseTool(name string) (toolType, error) {
 	switch toolType(name) {
-	case toolReadFile, toolWriteFile, toolExecBash, toolLoadSkill:
+	case toolReadFile, toolWriteFile, toolExecBash, toolLoadSkill, toolRunAgent:
 		return toolType(name), nil
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
@@ -40,6 +41,8 @@ func getToolDefinitions(allowTools []toolType) []anthropic.ToolUnionParam {
 			toolParamsDefinitions = append(toolParamsDefinitions, execBashToolParam)
 		case toolLoadSkill:
 			toolParamsDefinitions = append(toolParamsDefinitions, loadSkillToolParam)
+		case toolRunAgent:
+			toolParamsDefinitions = append(toolParamsDefinitions, runAgentToolParam)
 		}
 	}
 
@@ -53,7 +56,7 @@ func getToolDefinitions(allowTools []toolType) []anthropic.ToolUnionParam {
 	return tools
 }
 
-func executeTool(name toolType, input map[string]any) toolResult {
+func (a *Agent) executeTool(ctx context.Context, name toolType, input map[string]any) toolResult {
 	switch name {
 	case toolReadFile:
 		return readFile(input)
@@ -63,6 +66,8 @@ func executeTool(name toolType, input map[string]any) toolResult {
 		return execBash(input)
 	case toolLoadSkill:
 		return loadSkill(input)
+	case toolRunAgent:
+		return a.runAgent(ctx, input)
 	default:
 		return toolResult{
 			fmt.Sprintf("unknown tool: %s", name),

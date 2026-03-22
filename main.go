@@ -95,6 +95,44 @@ func loadSkills() ([]agent.SkillMeta, error) {
 	return skills, err
 }
 
+// カレントディレクトリの .tiny-code/agents/ ディレクトリにある全ての *.md の frontmatter を収集する
+func loadSubAgents() ([]agent.AgentMeta, error) {
+	var agents []agent.AgentMeta
+	err := filepath.Walk(agent.AgentPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// ディレクトリが存在しない場合はスキップ
+			if os.IsNotExist(err) {
+				return filepath.SkipAll
+			}
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		var a agent.AgentMeta
+		_, err = frontmatter.Parse(bytes.NewReader(data), &a)
+		if err != nil {
+			return err
+		}
+
+		agents = append(agents, a)
+		return nil
+	})
+
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return agents, err
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error loading .env file: %v\n", err)
@@ -107,7 +145,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		os.Exit(1)
 	}
-	a := agent.New(rules, skills)
+	subAgents, err := loadSubAgents()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	client := agent.NewClient(1)
+	eventCh := make(chan agent.StreamEvent, 32)
+	go agent.Renderer(eventCh)
+
+	a := agent.New(client, eventCh, rules, skills, subAgents)
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Println("🤖 tiny-code agent (type 'exit' to quit)")
@@ -160,4 +208,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		}
 	}
+
+	close(eventCh)
 }
