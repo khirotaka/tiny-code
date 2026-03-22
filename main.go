@@ -64,43 +64,11 @@ func loadAgentsFile() string {
 	return promptBuilder.String()
 }
 
-// カレントディレクトリの .tiny-code/skills/ ディレクトリにある全ての SKILL.md の frontmatter を収集する
-func loadSkills() ([]agent.SkillMeta, error) {
-	var skills []agent.SkillMeta
-	err := filepath.Walk(agent.SkillPath, func(path string, info os.FileInfo, err error) error {
+// 指定ディレクトリ配下の全 .md ファイルの frontmatter を T 型として収集する
+func loadMetas[T any](path string) ([]T, error) {
+	var items []T
+	err := filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if filepath.Ext(path) != ".md" {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		var skill agent.SkillMeta
-		_, err = frontmatter.Parse(bytes.NewReader(data), &skill)
-		if err != nil {
-			return err
-		}
-
-		skills = append(skills, skill)
-		return nil
-	})
-
-	return skills, err
-}
-
-// カレントディレクトリの .tiny-code/agents/ ディレクトリにある全ての *.md の frontmatter を収集する
-func loadSubAgents() ([]agent.AgentMeta, error) {
-	var agents []agent.AgentMeta
-	err := filepath.Walk(agent.AgentPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// ディレクトリが存在しない場合はスキップ
 			if os.IsNotExist(err) {
 				return filepath.SkipAll
 			}
@@ -109,28 +77,25 @@ func loadSubAgents() ([]agent.AgentMeta, error) {
 		if info.IsDir() {
 			return nil
 		}
-		if filepath.Ext(path) != ".md" {
+		if filepath.Ext(p) != ".md" {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-
-		var a agent.AgentMeta
-		_, err = frontmatter.Parse(bytes.NewReader(data), &a)
+		var item T
+		_, err = frontmatter.Parse(bytes.NewReader(data), &item)
 		if err != nil {
 			return err
 		}
-
-		agents = append(agents, a)
+		items = append(items, item)
 		return nil
 	})
-
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
-	return agents, err
+	return items, err
 }
 
 func main() {
@@ -140,12 +105,12 @@ func main() {
 	}
 
 	rules := loadAgentsFile()
-	skills, err := loadSkills()
+	skills, err := loadMetas[agent.SkillMeta](agent.SkillPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		os.Exit(1)
 	}
-	subAgents, err := loadSubAgents()
+	subAgents, err := loadMetas[agent.AgentMeta](agent.AgentPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		os.Exit(1)
